@@ -2,160 +2,194 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Greens & Yellows</title>
+<title>Daily Word Grid</title>
+
 <style>
-body { font-family: Arial; text-align:center; margin-top:40px; }
-input { font-size:20px; text-transform:uppercase; }
-button { font-size:18px; margin-left:5px; }
-#log { margin-top:20px; white-space:pre-line; }
-table { margin:20px auto; border-collapse:collapse; }
-td,th { border:1px solid #aaa; padding:6px 12px; }
+body{
+font-family:Arial;
+text-align:center;
+background:#121213;
+color:white;
+}
+
+#grid{
+display:grid;
+grid-template-columns:repeat(6,60px);
+gap:5px;
+justify-content:center;
+margin:20px;
+}
+
+.tile{
+width:60px;
+height:60px;
+border:2px solid #3a3a3c;
+font-size:28px;
+display:flex;
+align-items:center;
+justify-content:center;
+cursor:pointer;
+user-select:none;
+}
+
+.rowDone .tile{border-color:#565758;}
+
+.keyboard{
+margin-top:20px;
+}
+
+.key{
+display:inline-block;
+padding:10px 12px;
+margin:3px;
+background:#818384;
+border-radius:4px;
+cursor:pointer;
+font-weight:bold;
+}
+
+#msg{margin-top:15px;font-size:18px;}
 </style>
 </head>
 <body>
 
-<h1>Greens & Yellows</h1>
-<p>Guess the 6-letter word in <b>20</b> tries.</p>
+<h1>Daily Word</h1>
+<p>Click tiles to mark colors manually.</p>
 
-<input id="guessBox" maxlength="6">
-<button onclick="submitGuess()">Guess</button>
+<div id="grid"></div>
+<div id="msg"></div>
 
-<div id="status"></div>
-<div id="log"></div>
-
-<h3>Stats</h3>
-<div id="stats"></div>
-
-<h3>Leaderboard (Local)</h3>
-<input id="nameBox" placeholder="username">
-<button onclick="saveScore()">Save Score</button>
-<table id="board"></table>
+<div class="keyboard" id="kb"></div>
 
 <script>
-let words = [];
-let secret = "";
-let guessCount = 1;
-let maxGuesses = 20;
-let finished = false;
+let words=[];
+let secret="";
+let row=0;
+let col=0;
+let maxRows=20;
+let grid=[];
+let current="";
 
-async function loadWords(){
-    let res = await fetch("bnc 6-letter 23033.txt");
-    let text = await res.text();
-    words = text.split(/\r?\n/).map(w=>w.trim()).filter(Boolean);
-    startGame();
+/* load word list */
+fetch("bnc 6-letter 23033.txt")
+.then(r=>r.text())
+.then(t=>{
+words=t.split(/\r?\n/).map(w=>w.trim()).filter(Boolean);
+start();
+});
+
+function dailyIndex(){
+let start=new Date(2024,0,1);
+let now=new Date();
+return Math.floor((now-start)/86400000)%words.length;
 }
 
-function getDailyIndex(){
-    let start = new Date(2024,0,1);
-    let now = new Date();
-    let diff = Math.floor((now-start)/86400000);
-    return diff % words.length;
+function start(){
+secret=words[dailyIndex()];
+createGrid();
+createKeyboard();
 }
 
-function startGame(){
-    secret = words[getDailyIndex()];
-    guessCount = 1;
-    finished = false;
-    document.getElementById("log").textContent="";
-    document.getElementById("status").textContent="Daily word loaded.";
+/* grid */
+function createGrid(){
+let g=document.getElementById("grid");
+g.innerHTML="";
+for(let r=0;r<maxRows;r++){
+grid[r]=[];
+for(let c=0;c<6;c++){
+let d=document.createElement("div");
+d.className="tile";
+d.dataset.state=0;
+d.onclick=()=>cycle(d);
+g.appendChild(d);
+grid[r][c]=d;
+}
+}
 }
 
-function greenYellow(guess){
-    let greens=0,yellows=0;
-    let gList=secret.split("");
-    let wList=guess.split("");
-    let remG=[], remW=[];
-
-    for(let i=0;i<6;i++){
-        if(gList[i]===wList[i]) greens++;
-        else{
-            remG.push(gList[i]);
-            remW.push(wList[i]);
-        }
-    }
-
-    for(let g of remG){
-        let i=remW.indexOf(g);
-        if(i!=-1){ yellows++; remW.splice(i,1); }
-    }
-    return `${greens} Greens, ${yellows} Yellows.`;
+function cycle(tile){
+let s=(+tile.dataset.state+1)%4;
+tile.dataset.state=s;
+let colors=["#121213","#3a3a3c","#b59f3b","#538d4e"];
+tile.style.background=colors[s];
 }
 
-function submitGuess(){
-    if(finished) return;
+/* keyboard */
+function createKeyboard(){
+let letters="QWERTYUIOPASDFGHJKLZXCVBNM";
+let kb=document.getElementById("kb");
 
-    let box=document.getElementById("guessBox");
-    let guess=box.value.toUpperCase();
-    box.value="";
-
-    if(guess.length!==6){ setStatus("Enter 6 letters."); return; }
-    if(!words.includes(guess)){ setStatus("Invalid word."); return; }
-
-    let result=greenYellow(guess);
-    log(`Guess ${guessCount}: ${guess} → ${result}`);
-
-    if(guess===secret){
-        log("YOU WIN!");
-        recordResult(true);
-        finished=true;
-        return;
-    }
-
-    guessCount++;
-    if(guessCount>maxGuesses){
-        log(`YOU LOSE! Word was ${secret}`);
-        recordResult(false);
-        finished=true;
-    }
+for(let l of letters){
+let k=document.createElement("span");
+k.textContent=l;
+k.className="key";
+k.onclick=()=>type(l);
+kb.appendChild(k);
 }
 
-function log(t){ document.getElementById("log").textContent+=t+"\n"; }
-function setStatus(t){ document.getElementById("status").textContent=t; }
+let enter=document.createElement("span");
+enter.textContent="ENTER";
+enter.className="key";
+enter.onclick=submit;
+kb.appendChild(enter);
 
-function recordResult(win){
-    let stats=JSON.parse(localStorage.getItem("gyStats")||'{"wins":0,"losses":0}');
-    if(win) stats.wins++; else stats.losses++;
-    localStorage.setItem("gyStats",JSON.stringify(stats));
-    updateStats();
+let del=document.createElement("span");
+del.textContent="⌫";
+del.className="key";
+del.onclick=back;
+kb.appendChild(del);
 }
 
-function updateStats(){
-    let s=JSON.parse(localStorage.getItem("gyStats")||'{"wins":0,"losses":0}');
-    let total=s.wins+s.losses;
-    let rate= total? ((s.wins/total)*100).toFixed(1):0;
-    document.getElementById("stats").textContent=
-        `Wins: ${s.wins} | Losses: ${s.losses} | Win Rate: ${rate}%`;
+function type(l){
+if(col<6){
+grid[row][col].textContent=l;
+current+=l;
+col++;
+}
 }
 
-function saveScore(){
-    if(!finished){ alert("Finish game first"); return; }
-    let name=document.getElementById("nameBox").value.trim();
-    if(!name){ alert("Enter name"); return; }
-
-    let board=JSON.parse(localStorage.getItem("gyBoard")||"[]");
-    board.push({
-        name:name,
-        guesses:guessCount-1,
-        date:new Date().toLocaleDateString()
-    });
-
-    board.sort((a,b)=>a.guesses-b.guesses);
-    board=board.slice(0,10);
-    localStorage.setItem("gyBoard",JSON.stringify(board));
-    renderBoard();
+function back(){
+if(col>0){
+col--;
+grid[row][col].textContent="";
+current=current.slice(0,-1);
+}
 }
 
-function renderBoard(){
-    let board=JSON.parse(localStorage.getItem("gyBoard")||"[]");
-    let html="<tr><th>Name</th><th>Guesses</th><th>Date</th></tr>";
-    for(let r of board)
-        html+=`<tr><td>${r.name}</td><td>${r.guesses}</td><td>${r.date}</td></tr>`;
-    document.getElementById("board").innerHTML=html;
+function submit(){
+if(current.length!=6){
+msg("Need 6 letters");
+return;
+}
+if(!words.includes(current)){
+msg("Not in word list");
+return;
 }
 
-updateStats();
-renderBoard();
-loadWords();
+if(current===secret){
+msg("Correct word!");
+return;
+}
+
+row++;
+col=0;
+current="";
+
+if(row>=maxRows){
+msg("Out of guesses. Word was "+secret);
+}
+}
+
+function msg(t){
+document.getElementById("msg").textContent=t;
+}
+
+/* keyboard typing */
+document.addEventListener("keydown",e=>{
+if(/^[a-z]$/i.test(e.key)) type(e.key.toUpperCase());
+if(e.key==="Backspace") back();
+if(e.key==="Enter") submit();
+});
 </script>
 
 </body>
