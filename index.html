@@ -2,22 +2,27 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Daily Word Grid</title>
+<title>Bulls & Cows Word</title>
 
 <style>
 body{
-font-family:Arial;
-text-align:center;
 background:#121213;
 color:white;
+font-family:Arial;
+text-align:center;
+}
+
+#wrap{
+display:flex;
+justify-content:center;
+gap:20px;
+margin-top:20px;
 }
 
 #grid{
 display:grid;
 grid-template-columns:repeat(6,60px);
 gap:5px;
-justify-content:center;
-margin:20px;
 }
 
 .tile{
@@ -29,48 +34,51 @@ display:flex;
 align-items:center;
 justify-content:center;
 cursor:pointer;
-user-select:none;
 }
 
-.rowDone .tile{border-color:#565758;}
-
-.keyboard{
-margin-top:20px;
+.result{
+height:60px;
+display:flex;
+align-items:center;
+font-size:18px;
 }
 
 .key{
 display:inline-block;
-padding:10px 12px;
-margin:3px;
 background:#818384;
+margin:3px;
+padding:10px 12px;
 border-radius:4px;
 cursor:pointer;
 font-weight:bold;
 }
 
-#msg{margin-top:15px;font-size:18px;}
+#msg{margin-top:15px;font-size:18px}
 </style>
 </head>
 <body>
 
-<h1>Daily Word</h1>
-<p>Click tiles to mark colors manually.</p>
+<h1>Bulls & Cows</h1>
+<p>Guess the word. Results show counts only.</p>
 
+<div id="wrap">
 <div id="grid"></div>
-<div id="msg"></div>
+<div id="results"></div>
+</div>
 
-<div class="keyboard" id="kb"></div>
+<div id="kb"></div>
+<div id="msg"></div>
 
 <script>
 let words=[];
 let secret="";
-let row=0;
-let col=0;
+let row=0,col=0;
+let current="";
 let maxRows=20;
 let grid=[];
-let current="";
+let filters={}; // letter -> state
 
-/* load word list */
+/* load words */
 fetch("bnc 6-letter 23033.txt")
 .then(r=>r.text())
 .then(t=>{
@@ -86,63 +94,62 @@ return Math.floor((now-start)/86400000)%words.length;
 
 function start(){
 secret=words[dailyIndex()];
-createGrid();
-createKeyboard();
+makeGrid();
+makeKeyboard();
 }
 
 /* grid */
-function createGrid(){
+function makeGrid(){
 let g=document.getElementById("grid");
+let r=document.getElementById("results");
 g.innerHTML="";
-for(let r=0;r<maxRows;r++){
-grid[r]=[];
-for(let c=0;c<6;c++){
+r.innerHTML="";
+for(let y=0;y<maxRows;y++){
+grid[y]=[];
+for(let x=0;x<6;x++){
 let d=document.createElement("div");
 d.className="tile";
-d.dataset.state=0;
-d.onclick=()=>cycle(d);
+d.onclick=()=>cycleLetter(d.textContent);
 g.appendChild(d);
-grid[r][c]=d;
+grid[y][x]=d;
 }
+let res=document.createElement("div");
+res.className="result";
+res.id="res"+y;
+r.appendChild(res);
 }
-}
-
-function cycle(tile){
-let s=(+tile.dataset.state+1)%4;
-tile.dataset.state=s;
-let colors=["#121213","#3a3a3c","#b59f3b","#538d4e"];
-tile.style.background=colors[s];
 }
 
 /* keyboard */
-function createKeyboard(){
+function makeKeyboard(){
 let letters="QWERTYUIOPASDFGHJKLZXCVBNM";
 let kb=document.getElementById("kb");
 
 for(let l of letters){
 let k=document.createElement("span");
-k.textContent=l;
 k.className="key";
+k.textContent=l;
 k.onclick=()=>type(l);
 kb.appendChild(k);
 }
 
-let enter=document.createElement("span");
-enter.textContent="ENTER";
-enter.className="key";
-enter.onclick=submit;
-kb.appendChild(enter);
-
-let del=document.createElement("span");
-del.textContent="⌫";
-del.className="key";
-del.onclick=back;
-kb.appendChild(del);
+addKey("ENTER",submit);
+addKey("⌫",back);
 }
 
+function addKey(t,fn){
+let k=document.createElement("span");
+k.className="key";
+k.textContent=t;
+k.onclick=fn;
+document.getElementById("kb").appendChild(k);
+}
+
+/* typing */
 function type(l){
 if(col<6){
 grid[row][col].textContent=l;
+applyFilter(grid[row][col]);
 current+=l;
 col++;
 }
@@ -156,32 +163,74 @@ current=current.slice(0,-1);
 }
 }
 
+/* submit guess */
 function submit(){
-if(current.length!=6){
-msg("Need 6 letters");
-return;
-}
-if(!words.includes(current)){
-msg("Not in word list");
-return;
-}
+if(current.length!=6){msg("Need 6 letters");return;}
+if(!words.includes(current)){msg("Not in list");return;}
 
-if(current===secret){
-msg("Correct word!");
-return;
-}
+let res=countGY(current);
+document.getElementById("res"+row).textContent=
+`🟩 ${res.g}  🟨 ${res.y}`;
 
 row++;
 col=0;
 current="";
 
-if(row>=maxRows){
-msg("Out of guesses. Word was "+secret);
+if(res.g==6){msg("Correct!");return;}
+if(row>=maxRows){msg("Word was "+secret);}
+}
+
+/* count greens/yellows */
+function countGY(guess){
+let g=0,y=0;
+let s=secret.split("");
+let w=guess.split("");
+let rs=[],rw=[];
+
+for(let i=0;i<6;i++){
+if(s[i]==w[i]) g++;
+else{rs.push(s[i]); rw.push(w[i]);}
+}
+
+for(let c of rw){
+let i=rs.indexOf(c);
+if(i!=-1){y++; rs.splice(i,1);}
+}
+return {g,y};
+}
+
+/* FILTER SYSTEM */
+
+function cycleLetter(letter){
+if(!letter) return;
+
+let state=(filters[letter]??0)+1;
+if(state>3) state=0;
+filters[letter]=state;
+recolorAll(letter);
+}
+
+function recolorAll(letter){
+for(let r of grid){
+for(let t of r){
+if(t.textContent===letter)
+applyFilter(t);
+}
 }
 }
 
-function msg(t){
-document.getElementById("msg").textContent=t;
+function applyFilter(tile){
+let l=tile.textContent;
+if(!l) return;
+
+let s=filters[l]??0;
+let colors=[
+"",
+"#3a3a3c",
+"#b59f3b",
+"#538d4e"
+];
+tile.style.background=colors[s];
 }
 
 /* keyboard typing */
@@ -190,6 +239,8 @@ if(/^[a-z]$/i.test(e.key)) type(e.key.toUpperCase());
 if(e.key==="Backspace") back();
 if(e.key==="Enter") submit();
 });
+
+function msg(t){document.getElementById("msg").textContent=t;}
 </script>
 
 </body>
